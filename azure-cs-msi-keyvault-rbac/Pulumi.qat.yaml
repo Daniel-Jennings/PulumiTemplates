@@ -1,0 +1,4 @@
+config:
+  Miami-TCMS-pulumi:company_code: TRP
+  Miami-TCMS-pulumi:environment: QAT
+  Miami-TCMS-pulumi:location: eastus2

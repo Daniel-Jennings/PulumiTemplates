@@ -15,20 +15,23 @@ using Pulumi.Azure.Sql;
 using Pulumi.Azure.Storage;
 using Pulumi.Random;
 
+using PulumiFactory;
+
 class Program
 {
     static Task<int> Main()
     {
         return Deployment.RunAsync(async () => {
-            var resourceGroup = new ResourceGroup("keyvault-rg");
+            var config = new Pulumi.Config();
+            var companyCode = config.Require("company_code");
+            var location = config.Require("location");
+            var environment = config.Require("environment");
+            ResourceFactory factory = new ResourceFactory(companyCode, location, environment);
+
+            var resourceGroup = factory.GetResourceGroup("00");
 
             // Create a storage account for Blobs
-            var storageAccount = new Account("storage", new AccountArgs
-            {
-                ResourceGroupName = resourceGroup.Name,
-                AccountReplicationType = "LRS",
-                AccountTier = "Standard",
-            });
+            var storageAccount = factory.GetStorageAccount("00", resourceGroup.Name);
 
             // The container to put our files into
             var storageContainer = new Container("files", new ContainerArgs
