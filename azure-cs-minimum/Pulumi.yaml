@@ -1,0 +1,3 @@
+name: azure-cs-minimum
+runtime: dotnet
+description: A minimal Azure C# Pulumi program
