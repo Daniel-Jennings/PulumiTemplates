@@ -1,20 +1,9 @@
 ﻿// Copyright 2016-2019, Pulumi Corporation.  All rights reserved.
-
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 
 using Pulumi;
-using Pulumi.Azure.AppService;
-using Pulumi.Azure.AppService.Inputs;
-using Pulumi.Azure.Authorization;
-using Pulumi.Azure.Core;
-using Pulumi.Azure.KeyVault;
-using Pulumi.Azure.KeyVault.Inputs;
-using Pulumi.Azure.Sql;
-using Pulumi.Azure.Storage;
-using Pulumi.Random;
-
 using PulumiFactory;
 
 class Program
@@ -26,179 +15,79 @@ class Program
             var companyCode = config.Require("company_code");
             var location = config.Require("location");
             var environment = config.Require("environment");
+            var webAppPath = config.Require("webAppPath");
             ResourceFactory factory = new ResourceFactory(companyCode, location, environment);
 
+            // Create a resource group
             var resourceGroup = factory.GetResourceGroup("00");
 
             // Create a storage account for Blobs
             var storageAccount = factory.GetStorageAccount("00", resourceGroup.Name);
 
             // The container to put our files into
-            var storageContainer = new Container("files", new ContainerArgs
-            {
-                StorageAccountName = storageAccount.Name,
-                ContainerAccessType = "private",
-            });
+            var storageContainer = factory.GetContainer("00", storageAccount.Name);
 
             // Azure SQL Server that we want to access from the application
-            var administratorLoginPassword = new RandomPassword("password",
-                new RandomPasswordArgs { Length = 16, Special = true }).Result;
-            var sqlServer = new SqlServer("sqlserver", new SqlServerArgs
-            {
-                ResourceGroupName = resourceGroup.Name,
-                // The login and password are required but won't be used in our application
-                AdministratorLogin = "manualadmin",
-                AdministratorLoginPassword = administratorLoginPassword,
-                Version = "12.0",
-            });
+            var administratorLoginPassword = factory.GetRandomPassword(16).Result;
+            var sqlServer = factory.GetSqlServer("00", resourceGroup.Name, "manualadmin", administratorLoginPassword, "12.0");
 
             // Azure SQL Database that we want to access from the application
-            var database = new Database("db", new DatabaseArgs
-            {
-                ResourceGroupName = resourceGroup.Name,
-                ServerName = sqlServer.Name,
-                RequestedServiceObjectiveName = "S0",
-            });
+            var database = factory.GetDatabase("00", resourceGroup.Name, sqlServer.Name, "S0");
 
             // The connection string that has no credentials in it: authertication will come through MSI
             var connectionString = Output.Format($"Server=tcp:{sqlServer.Name}.database.windows.net;Database={database.Name};");
 
             // A file in Blob Storage that we want to access from the application
-            var textBlob = new Blob("text", new BlobArgs
-            {
-                StorageAccountName = storageAccount.Name,
-                StorageContainerName = storageContainer.Name,
-                Type = "block",
-                Source = "./README.md",
-            });
+            var textBlob = factory.GetBlob("00", storageAccount.Name, storageContainer.Name, "block", "./README.md");
 
             // A plan to host the App Service
-            var appServicePlan = new Plan("asp", new PlanArgs
-            {
-                ResourceGroupName = resourceGroup.Name,
-                Kind = "App",
-                Sku = new PlanSkuArgs
-                {
-                    Tier = "Basic",
-                    Size = "B1",
-                },
-            });
+            var appServicePlanSku = factory.GetPlanSku("Basic", "B1");
+            var appServicePlan = factory.GetPlan("00", resourceGroup.Name, appServicePlanSku, "App");
 
             // ASP.NET deployment package
-            var blob = new ZipBlob("zip", new ZipBlobArgs
-            {
-                StorageAccountName = storageAccount.Name,
-                StorageContainerName = storageContainer.Name,
-                Type = "block",
-                Content = new FileArchive("./webapp/bin/Debug/netcoreapp2.2/publish"),
-            });
+            var content = new FileArchive(webAppPath);
+            var blob = factory.GetZipBlob("00", storageAccount.Name, storageContainer.Name, "block", content);
 
             var clientConfig = await Pulumi.Azure.Core.Invokes.GetClientConfig();
             var tenantId = clientConfig.TenantId;
             var currentPrincipal = clientConfig.ObjectId;
 
             // Key Vault to store secrets (e.g. Blob URL with SAS)
-            var vault = new KeyVault("vault", new KeyVaultArgs
-            {
-                ResourceGroupName = resourceGroup.Name,
-                SkuName = "standard",
-                TenantId = tenantId,
-                AccessPolicies =
-                {
-                    new KeyVaultAccessPoliciesArgs
-                    {
-                        TenantId = tenantId,
-                        // The current principal has to be granted permissions to Key Vault so that it can actually add and then remove
-                        // secrets to/from the Key Vault. Otherwise, 'pulumi up' and 'pulumi destroy' operations will fail.
-                        ObjectId = currentPrincipal,
-                        SecretPermissions = { "delete", "get", "list", "set" },
-                    }
-                },
-            });
+            var vaultAccessPolicies = factory.GetKeyVaultAccessPolicy(Output.Create(tenantId), Output.Create(currentPrincipal), null, 
+                new List<string> { "delete", "get", "list", "set" }, null);
+            var vault = factory.GetKeyVault("00", resourceGroup.Name, Output.Create(tenantId), vaultAccessPolicies);
 
             // Put the URL of the zip Blob to KV
-            var secret = new Secret("deployment-zip", new SecretArgs
-            {
-                KeyVaultId = vault.Id,
-                Value = SharedAccessSignature.SignedBlobReadUrl(blob, storageAccount),
-            });
+            var secret = factory.GetSecret("00", vault.Id, blob, storageAccount);
             var secretUri = Output.Format($"{secret.VaultUri}secrets/{secret.Name}/{secret.Version}");
 
-
             // The application hosted in App Service
-            var app = new AppService("app", new AppServiceArgs
-            {
-                ResourceGroupName = resourceGroup.Name,
-                AppServicePlanId = appServicePlan.Id,
-                // A system-assigned managed service identity to be used for authentication and authorization to the SQL Database and the Blob Storage
-                Identity = new AppServiceIdentityArgs { Type = "SystemAssigned" },
-
-                AppSettings =
-                {
-                    // Website is deployed from a URL read from the Key Vault
-                    { "WEBSITE_RUN_FROM_ZIP", Output.Format($"@Microsoft.KeyVault(SecretUri={secretUri})") },
-
-                    // Note that we simply provide the URL without SAS or keys
-                    { "StorageBlobUrl", textBlob.Url },
-                },
-                ConnectionStrings =
-                {
-                    new AppServiceConnectionStringsArgs
-                    {
-                        Name = "db",
-                        Type = "SQLAzure",
-                        Value = connectionString,
-                    },
-                },
-            });
+            var app = factory.GetAppService("00", resourceGroup.Name, appServicePlan.Id, textBlob.Url, secretUri, connectionString,
+                "db", "SQLAzure");
 
             // Work around a preview issue https://github.com/pulumi/pulumi-azure/issues/192
             var principalId = app.Identity.Apply(id => id.PrincipalId ?? "11111111-1111-1111-1111-111111111111");
 
             // Grant App Service access to KV secrets
-            var policy = new AccessPolicy("app-policy", new AccessPolicyArgs
-            {
-                KeyVaultId = vault.Id,
-                TenantId = tenantId,
-                ObjectId = principalId,
-                SecretPermissions = { "get" },
-            });
+            var policy = factory.GetAccessPolicy("00", vault.Id, Output.Create(tenantId), principalId, 
+                secretPermissions: new List<string> { "get" });
 
             // Make the App Service the admin of the SQL Server (double check if you want a more fine-grained security model in your real app)
-            var sqlAdmin = new ActiveDirectoryAdministrator("adadmin", new ActiveDirectoryAdministratorArgs
-            {
-                ResourceGroupName = resourceGroup.Name,
-                TenantId = tenantId,
-                ObjectId = principalId,
-                Login = "adadmin",
-                ServerName = sqlServer.Name,
-            });
+            var sqlAdmin = factory.GetActiveDirectoryAdministrator(resourceGroup.Name, Output.Create(tenantId), principalId,
+                "adadmin", sqlServer.Name);
 
             // Grant access from App Service to the container in the storage
-            var blobPermission = new Assignment("readblob", new AssignmentArgs
-            {
-                PrincipalId = principalId,
-                Scope = Output.Format($"{storageAccount.Id}/blobServices/default/containers/{storageContainer.Name}"),
-                RoleDefinitionName = "Storage Blob Data Reader",
-            });
+            var blobPermission = factory.GetAssignment("00", principalId, storageAccount.Id, storageContainer.Name,
+                "Storage Blob Data Reader");
 
             // Add SQL firewall exceptions
             var firewallRules = app.OutboundIpAddresses.Apply(
-                ips => ips.Split(",").Select(
-                    ip => new FirewallRule($"FR{ip}", new FirewallRuleArgs
-                    {
-                        ResourceGroupName = resourceGroup.Name,
-                        StartIpAddress = ip,
-                        EndIpAddress = ip,
-                        ServerName = sqlServer.Name,
-                    })
-                ).ToList());
+                ips => ips.Split(",").Select(ip => factory.GetFirewallRule("00", resourceGroup.Name, ip, ip, sqlServer.Name)));
 
             return new Dictionary<string, object?>
             {
                 { "endpoint", Output.Format($"https://{app.DefaultSiteHostname}") },
             };
-
         });
     }
 }

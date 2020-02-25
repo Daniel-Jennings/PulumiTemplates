@@ -1,4 +1,0 @@
-config:
-  Miami-TCMS-pulumi:company_code: TRP
-  Miami-TCMS-pulumi:environment: DEV
-  Miami-TCMS-pulumi:location: eastus2

@@ -7,8 +7,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Pulumi.Random" Version="1.4.0-preview" />
-	<PackageReference Include="Trapeze.PulumiFactory" Version="1.0.0-beta" />
+    <PackageReference Include="Trapeze.PulumiFactory" Version="1.0.1-beta" />
   </ItemGroup>
 
   <PropertyGroup>
