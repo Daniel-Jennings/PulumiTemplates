@@ -12,42 +12,43 @@ class Program
     {
         return Deployment.RunAsync(async () => {
             var config = new Pulumi.Config();
-            var companyCode = config.Require("company_code");
-            var location = config.Require("location");
             var environment = config.Require("environment");
+            var companyCode = config.Require("company_code");
+            var scope = config.Require("scope");
+            var location = config.Require("location");
             var webAppPath = config.Require("webAppPath");
             var sourcePath = config.Require("sourcePath");
             ResourceFactory factory = new ResourceFactory(companyCode, location, environment);
 
             // Create a resource group
-            var resourceGroup = factory.GetResourceGroup(scope: "00");
+            var resourceGroup = factory.GetResourceGroup(scope: scope);
 
             // Create a storage account for Blobs
-            var storageAccount = factory.GetStorageAccount("00", "Standard", "LRS", resourceGroup.Name);
+            var storageAccount = factory.GetStorageAccount(scope, "Standard", "LRS", resourceGroup.Name);
 
             // The container to put our files into
-            var storageContainer = factory.GetContainer(scope: "00", storageAccountName: storageAccount.Name);
+            var storageContainer = factory.GetContainer(scope: scope, storageAccountName: storageAccount.Name);
 
             // Azure SQL Server that we want to access from the application
             var administratorLoginPassword = factory.GetRandomPassword(length: 16).Result;
-            var sqlServer = factory.GetSqlServer(scope: "00", resourceGroupName: resourceGroup.Name, administratorLogin: "manualadmin", administratorLoginPassword: administratorLoginPassword, version: "12.0");
+            var sqlServer = factory.GetSqlServer(scope: scope, resourceGroupName: resourceGroup.Name, administratorLogin: "manualadmin", administratorLoginPassword: administratorLoginPassword, version: "12.0");
 
             // Azure SQL Database that we want to access from the application
-            var database = factory.GetDatabase(scope: "00", resourceGroupName: resourceGroup.Name, sqlServerName: sqlServer.Name, requestedServiceObjectiveName: "S0");
+            var database = factory.GetDatabase(scope: scope, resourceGroupName: resourceGroup.Name, sqlServerName: sqlServer.Name, requestedServiceObjectiveName: "S0");
 
             // The connection string that has no credentials in it: authertication will come through MSI
             var connectionString = Output.Format($"Server=tcp:{sqlServer.Name}.database.windows.net;Database={database.Name};");
 
             // A file in Blob Storage that we want to access from the application
-            var textBlob = factory.GetBlob(scope: "00", storageAccountName: storageAccount.Name, storageContainerName: storageContainer.Name, type: "block", source: sourcePath);
+            var textBlob = factory.GetBlob(scope: scope, storageAccountName: storageAccount.Name, storageContainerName: storageContainer.Name, type: "block", source: sourcePath);
 
             // A plan to host the App Service
             var appServicePlanSku = factory.GetPlanSku(tier: "Basic", size: "B1");
-            var appServicePlan = factory.GetPlan(scope: "00", resourceGroupName: resourceGroup.Name, sku: appServicePlanSku, kind: "App");
+            var appServicePlan = factory.GetPlan(scope: scope, resourceGroupName: resourceGroup.Name, sku: appServicePlanSku, kind: "App");
 
             // ASP.NET deployment package
             var content = new FileArchive(webAppPath);
-            var blob = factory.GetZipBlob(scope: "00", storageAccountName: storageAccount.Name, storageContainerName: storageContainer.Name, type: "block", content: content);
+            var blob = factory.GetZipBlob(scope: scope, storageAccountName: storageAccount.Name, storageContainerName: storageContainer.Name, type: "block", content: content);
 
             var clientConfig = await Pulumi.Azure.Core.Invokes.GetClientConfig();
             var tenantId = clientConfig.TenantId;
@@ -56,21 +57,21 @@ class Program
             // Key Vault to store secrets (e.g. Blob URL with SAS)
             var vaultAccessPolicies = factory.GetKeyVaultAccessPolicy(tenantId: Output.Create(tenantId), objectId: Output.Create(currentPrincipal),
                 secretPermissions: new List<string> { "delete", "get", "list", "set" });
-            var vault = factory.GetKeyVault(scope: "00", resourceGroupName: resourceGroup.Name, tenantId: Output.Create(tenantId), accessPolicies: vaultAccessPolicies);
+            var vault = factory.GetKeyVault(scope: scope, resourceGroupName: resourceGroup.Name, tenantId: Output.Create(tenantId), accessPolicies: vaultAccessPolicies);
 
             // Put the URL of the zip Blob to KV
-            var secret = factory.GetSecret(scope: "00", keyVaultId: vault.Id, blob: blob, storageAccount: storageAccount);
+            var secret = factory.GetSecret(scope: scope, keyVaultId: vault.Id, blob: blob, storageAccount: storageAccount);
             var secretUri = Output.Format($"{secret.VaultUri}secrets/{secret.Name}/{secret.Version}");
 
             // The application hosted in App Service
-            var app = factory.GetAppService(scope: "00", resourceGroupName: resourceGroup.Name, appServicePlanId: appServicePlan.Id, blobUrl: textBlob.Url, secretUri: secretUri,
+            var app = factory.GetAppService(scope: scope, resourceGroupName: resourceGroup.Name, appServicePlanId: appServicePlan.Id, blobUrl: textBlob.Url, secretUri: secretUri,
                 connectionString: connectionString, connectionStringName: "db", connectionStringType: "SQLAzure");
 
             // Work around a preview issue https://github.com/pulumi/pulumi-azure/issues/192
             var principalId = app.Identity.Apply(id => id.PrincipalId ?? "11111111-1111-1111-1111-111111111111");
 
             // Grant App Service access to KV secrets
-            var policy = factory.GetAccessPolicy(scope: "00", keyVaultId: vault.Id, tenantId: Output.Create(tenantId), objectId: principalId,
+            var policy = factory.GetAccessPolicy(scope: scope, keyVaultId: vault.Id, tenantId: Output.Create(tenantId), objectId: principalId,
                 secretPermissions: new List<string> { "get" });
 
             // Make the App Service the admin of the SQL Server (double check if you want a more fine-grained security model in your real app)
@@ -83,7 +84,7 @@ class Program
 
             // Add SQL firewall exceptions
             var firewallRules = app.OutboundIpAddresses.Apply(
-                ips => ips.Split(",").Select(ip => factory.GetFirewallRule(scope: "00", resourceGroupName: resourceGroup.Name, startIpAddress: ip, endIpAddress: ip, sqlServerName: sqlServer.Name)).ToList());
+                ips => ips.Split(",").Select(ip => factory.GetFirewallRule(scope: scope, resourceGroupName: resourceGroup.Name, startIpAddress: ip, endIpAddress: ip, sqlServerName: sqlServer.Name)).ToList());
 
             return new Dictionary<string, object?>
             {
