@@ -84,7 +84,7 @@ class Program
 
             // Add SQL firewall exceptions
             var firewallRules = app.OutboundIpAddresses.Apply(
-                ips => ips.Split(",").Select(ip => factory.GetFirewallRule(scope: scope, resourceGroupName: resourceGroup.Name, startIpAddress: ip, endIpAddress: ip, sqlServerName: sqlServer.Name)).ToList());
+                ips => ips.Split(",").Select(ip => factory.GetFirewallRule(resourceGroupName: resourceGroup.Name, startIpAddress: ip, endIpAddress: ip, sqlServerName: sqlServer.Name)).ToList());
 
             return new Dictionary<string, object?>
             {
