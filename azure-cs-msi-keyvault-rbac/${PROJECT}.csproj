@@ -11,7 +11,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Trapeze.PulumiFactory" Version="1.0.2-beta" />
+    <PackageReference Include="Trapeze.PulumiFactory" Version="1.0.3-beta" />
   </ItemGroup>
   
 </Project>
