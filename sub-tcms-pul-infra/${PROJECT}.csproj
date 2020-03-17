@@ -8,6 +8,7 @@
 
   <ItemGroup>
     <PackageReference Include="Pulumi.Azure" Version="2.1.0-preview" />
+	<PackageReference Include="Trapeze.PulumiFactory" Version="1.0.3-beta" />
   </ItemGroup>
 
 </Project>
