@@ -1,0 +1,4 @@
+name: SUB-TCMS-PUL-INFRA
+runtime: dotnet
+description: Template for infrastructure required for new subscriptions. This infrastructure
+  is required to assign blueprints
