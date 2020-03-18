@@ -14,10 +14,15 @@ class Infra : Stack
         var scope = config.Require("default_scope");
 
         ResourceFactory factory = new ResourceFactory(companyCode, location, environment, scope);
-        // Create an Azure Resource Group
-        var resourceGroup = factory.GetResourceGroup();
+		
+         // Create the tags to be applied to these resources: scope
+        Dictionary<string, string> tags = new Dictionary<string, string>();
+        tags.Add("scope", scope);
 
-        var storageAccount = factory.GetStorageAccount("Standard", "LRS", resourceGroup.Name);
+        // Create an Azure Resource Group and storage account
+        var resourceGroup = factory.GetResourceGroup(tags: tags);
+        var storageAccount = factory.GetStorageAccount(resourceGroup.Name, tags: tags);
+		
         // Export the connection string for the storage account
         this.ConnectionString = storageAccount.PrimaryConnectionString;
     }
