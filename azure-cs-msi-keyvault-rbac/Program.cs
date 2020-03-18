@@ -20,21 +20,25 @@ class Program
             var sourcePath = config.Require("sourcePath");
             ResourceFactory factory = new ResourceFactory(companyCode, location, environment, scope);
 
+            Dictionary<string, string> scopeTag = new Dictionary<string, string>();
+            scopeTag.Add("scope", scope);
+
             // Create a resource group
-            var resourceGroup = factory.GetResourceGroup();
+            var resourceGroup = factory.GetResourceGroup(tags: scopeTag);
 
             // Create a storage account for Blobs
-            var storageAccount = factory.GetStorageAccount("Standard", "LRS", resourceGroup.Name);
+            var storageAccount = factory.GetStorageAccount("Standard", "LRS", resourceGroup.Name, tags: scopeTag);
 
             // The container to put our files into
             var storageContainer = factory.GetContainer(storageAccountName: storageAccount.Name);
 
             // Azure SQL Server that we want to access from the application
             var administratorLoginPassword = factory.GetRandomPassword(length: 16).Result;
-            var sqlServer = factory.GetSqlServer(resourceGroupName: resourceGroup.Name, administratorLogin: "manualadmin", administratorLoginPassword: administratorLoginPassword, version: "12.0");
+            var sqlServer = factory.GetSqlServer(resourceGroupName: resourceGroup.Name, administratorLogin: "manualadmin", 
+                administratorLoginPassword: administratorLoginPassword, version: "12.0", tags: scopeTag);
 
             // Azure SQL Database that we want to access from the application
-            var database = factory.GetDatabase(resourceGroupName: resourceGroup.Name, sqlServerName: sqlServer.Name, requestedServiceObjectiveName: "S0");
+            var database = factory.GetDatabase(resourceGroupName: resourceGroup.Name, sqlServerName: sqlServer.Name, requestedServiceObjectiveName: "S0", tags: scopeTag);
 
             // The connection string that has no credentials in it: authertication will come through MSI
             var connectionString = Output.Format($"Server=tcp:{sqlServer.Name}.database.windows.net;Database={database.Name};");
@@ -44,7 +48,7 @@ class Program
 
             // A plan to host the App Service
             var appServicePlanSku = factory.GetPlanSku(tier: "Basic", size: "B1");
-            var appServicePlan = factory.GetPlan(resourceGroupName: resourceGroup.Name, sku: appServicePlanSku, kind: "App");
+            var appServicePlan = factory.GetPlan(resourceGroupName: resourceGroup.Name, sku: appServicePlanSku, kind: "App", tags: scopeTag);
 
             // ASP.NET deployment package
             var content = new FileArchive(webAppPath);
@@ -57,15 +61,15 @@ class Program
             // Key Vault to store secrets (e.g. Blob URL with SAS)
             var vaultAccessPolicies = factory.GetKeyVaultAccessPolicy(tenantId: Output.Create(tenantId), objectId: Output.Create(currentPrincipal),
                 secretPermissions: new List<string> { "delete", "get", "list", "set" });
-            var vault = factory.GetKeyVault(resourceGroupName: resourceGroup.Name, tenantId: Output.Create(tenantId), accessPolicies: vaultAccessPolicies);
+            var vault = factory.GetKeyVault(resourceGroupName: resourceGroup.Name, tenantId: Output.Create(tenantId), accessPolicies: vaultAccessPolicies, tags: scopeTag);
 
             // Put the URL of the zip Blob to KV
-            var secret = factory.GetSecret(keyVaultId: vault.Id, blob: blob, storageAccount: storageAccount);
+            var secret = factory.GetSecret(keyVaultId: vault.Id, blob: blob, storageAccount: storageAccount, tags: scopeTag);
             var secretUri = Output.Format($"{secret.VaultUri}secrets/{secret.Name}/{secret.Version}");
 
             // The application hosted in App Service
             var app = factory.GetAppService(resourceGroupName: resourceGroup.Name, appServicePlanId: appServicePlan.Id, blobUrl: textBlob.Url, secretUri: secretUri,
-                connectionString: connectionString, connectionStringName: "db", connectionStringType: "SQLAzure");
+                connectionString: connectionString, connectionStringName: "db", connectionStringType: "SQLAzure", tags: scopeTag);
 
             // Work around a preview issue https://github.com/pulumi/pulumi-azure/issues/192
             var principalId = app.Identity.Apply(id => id.PrincipalId ?? "11111111-1111-1111-1111-111111111111");
