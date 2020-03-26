@@ -22,13 +22,13 @@ class Program
 
             // Create an Azure Resource Group and storage account
             var resourceGroup = factory.GetResourceGroup(tags: tags);
-            var storageAccount = factory.GetStorageAccount(resourceGroup.Name, tags: tags);
+            var workspace = factory.GetAnalyticsWorkspace(resourceGroup.Name, tags: tags);
 
             return new Dictionary<string, object?>
             {
-                { "connectionString", storageAccount.PrimaryConnectionString },
+                { "resourceGroupId", resourceGroup.Id },
                 { "resourceGroupName", resourceGroup.Name },
-                { "resourceGroupId", resourceGroup.Id }
+                { "workspaceId", workspace.WorkspaceId }
             };
         });
     }
