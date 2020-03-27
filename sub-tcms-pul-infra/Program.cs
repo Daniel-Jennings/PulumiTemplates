@@ -28,7 +28,8 @@ class Program
             {
                 { "resourceGroupId", resourceGroup.Id },
                 { "resourceGroupName", resourceGroup.Name },
-                { "workspaceId", workspace.WorkspaceId }
+                { "workspaceId", workspace.WorkspaceId },
+                { "resourceNamePrefix", factory.ResourceNamePrefix }
             };
         });
     }
