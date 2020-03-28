@@ -18,12 +18,6 @@ class Program
             var companyCode = config.Require("company_code");
             var environment = config.Require("environment");
             var scope = config.Require("default_scope");
-            var jobScheduleIds = config.RequireObject<JsonElement>("job_schedule_ids");
-            List<string> jobScheduleIdList = new List<string>();
-            foreach (JsonElement id in jobScheduleIds.EnumerateArray())
-            {
-                jobScheduleIdList.Add(id.ToString());
-            }
 
             // Create the factory
             ResourceFactory factory = new ResourceFactory(companyCode, location, environment, scope);
@@ -57,7 +51,7 @@ class Program
                 description: scheduleDescription, frequency: "Week", startTime: startTime, timezone: "America/Toronto", interval: 1, weekDays: new List<string> { "Sunday" });
             var updatePowershellModulesJob = factory.GetAutomationJobSchedule(resourceGroupName: resourceGroup.Name, automationAccountName: automationAccount.Name, 
                 runbookName: updatePowershellModulesRunbook.Name, scheduleName: updatePowershellModulesSchedule.Name, 
-                jobScheduleId: jobScheduleIdList[0], parameters: parameters);
+                parameters: parameters);
 
             // Runbook for ShutdownSchedule
             DateTime tomorrow = now.AddDays(1);
@@ -77,7 +71,7 @@ class Program
                 description: scheduleDescription, frequency: "Day", startTime: startTime, timezone: "America/Toronto", interval: 1);
             var shutdownScheduleJobStartup = factory.GetAutomationJobSchedule(resourceGroupName: resourceGroup.Name, automationAccountName: automationAccount.Name, 
                 runbookName: shutdownScheduleRunbook.Name, scheduleName: shutdownScheduleScheduleStartup.Name, 
-                jobScheduleId: jobScheduleIdList[1], parameters: parameters);
+                parameters: parameters);
 
             // Schedule for Shutdown
             startTime = tomorrow.ToString("yyyy'-'MM'-'dd") + "T19:00:00-04:00";
@@ -90,7 +84,7 @@ class Program
                description: scheduleDescription, frequency: "Day", startTime: startTime, timezone: "America/Toronto", interval: 1);
             var shutdownScheduleJobShutdown = factory.GetAutomationJobSchedule(resourceGroupName: resourceGroup.Name, automationAccountName: automationAccount.Name, 
                 runbookName: shutdownScheduleRunbook.Name, scheduleName: shutdownScheduleScheduleShutdown.Name,
-                jobScheduleId: jobScheduleIdList[2], parameters: parameters);
+                parameters: parameters);
 
             // Return any outputs that may be required for subsequent steps
             return new Dictionary<string, object?>
