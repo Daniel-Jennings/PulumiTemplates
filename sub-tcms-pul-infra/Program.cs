@@ -1,9 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Pulumi;
+using Pulumi.Azure.KeyVault.Inputs;
+using Pulumi.AzureAD.Inputs;
 using PulumiFactory;
 
 class Program
@@ -18,6 +19,13 @@ class Program
             var companyCode = config.Require("company_code");
             var environment = config.Require("environment");
             var scope = config.Require("default_scope");
+            var tenantId = config.RequireSecret("tenant_id");
+            var rbacGroups = config.RequireObject<JsonElement>("rbac_groups");
+            List<string> rbacGroupsList = new List<string>();
+            foreach (JsonElement group in rbacGroups.EnumerateArray())
+            {
+                rbacGroupsList.Add(group.ToString());
+            }
 
             // Create the factory
             ResourceFactory factory = new ResourceFactory(companyCode, location, environment, scope);
@@ -31,26 +39,49 @@ class Program
             var workspace = factory.GetAnalyticsWorkspace(resourceGroupName: resourceGroup.Name, tags: tags);
             var automationAccount = factory.GetAutomationAccount(resourceGroupName: resourceGroup.Name, tags: tags);
 
+            // Create the application and service principal
+            var appRole = factory.GetADAppRole(value: "Contributor", description: "Contributor role for service principal application",
+                displayName: "AD-SP-Contributor", allowedMemberTypes: new List<string> { "Application" });
+            List<ApplicationAppRolesArgs> appRoles = new List<ApplicationAppRolesArgs> { appRole };
+            var application = factory.GetADApplication(appRoles: appRoles);
+            var oauth2Permission = factory.GetADServicePrincipalOauth2Permissions();
+            List<ServicePrincipalOauth2PermissionsArgs> oauth2Permissions = new List<ServicePrincipalOauth2PermissionsArgs> { oauth2Permission };
+            var servicePrincipal = factory.GetADServicePrincipal(applicationId: application.ApplicationId, oauth2Permissions: oauth2Permissions);
+
+            // Create the key vault
+            var accessPolicy = factory.GetKeyVaultAccessPolicy(tenantId: tenantId, objectId: servicePrincipal.ObjectId, secretPermissions: new List<string> { "get", "delete" },
+                certificatePermissions: new List<string> { "create", "get", "list", "import", "delete" });
+            List<KeyVaultAccessPoliciesArgs> accessPolicies = new List<KeyVaultAccessPoliciesArgs> { accessPolicy };
+            var keyVault = factory.GetKeyVault(resourceGroupName: resourceGroup.Name, tenantId: tenantId, accessPolicies: accessPolicies);
+
+            // Create the required RBAC groups read from the config
+            for (int i = 0; i < rbacGroupsList.Count; i++)
+            {
+                var rbacGroup = factory.GetADGroup((environment + "-" + rbacGroupsList[i]).ToLower(), "AD group for environment " + environment + " and role " + rbacGroupsList[i],
+                    owners: new InputList<string> { servicePrincipal.ObjectId }, members: new InputList<string> { servicePrincipal.ObjectId });
+            }
+
+            #region Runbooks
             // Runbook for UpdatePowershellModules
             DateTime now = DateTime.Now;
             int start = (int)now.DayOfWeek;
             int target = (int)DayOfWeek.Sunday;
             target = (target <= start ? target + 7 : target);
-            DateTime nextSunday = now.AddDays(target-start);
+            DateTime nextSunday = now.AddDays(target - start);
             string publishContentLink = "https://raw.githubusercontent.com/Daniel-Jennings/PulumiTemplates/master/sub-tcms-pul-infra/Runbooks/UpdatePowershellModules.ps1";
             string runbookDescription = "A runbook to update all of the Powershell modules used in the automation account. Should be run weekly to ensure latest module code is available";
             string startTime = nextSunday.ToString("yyyy'-'MM'-'dd") + "T20:00:00-04:00";
             string scheduleDescription = "Run a task weekly on Sunday at 8PM";
-            Dictionary<string, string> parameters = new Dictionary<string, string> { 
+            Dictionary<string, string> parameters = new Dictionary<string, string> {
                 { "resourcegroupname", factory.ResourceNames["rg"][0] },
-                { "automationaccountname", factory.ResourceNames["aacc"][0] } 
+                { "automationaccountname", factory.ResourceNames["aacc"][0] }
             };
-            var updatePowershellModulesRunbook = factory.GetAutomationRunbook(name: "UpdatePowershellModules", resourceGroupName: resourceGroup.Name, 
+            var updatePowershellModulesRunbook = factory.GetAutomationRunbook(name: "UpdatePowershellModules", resourceGroupName: resourceGroup.Name,
                 automationAccountName: automationAccount.Name, publishContentLink: publishContentLink, description: runbookDescription, runbookType: "PowerShell", tags: tags);
             var updatePowershellModulesSchedule = factory.GetAutomationSchedule(name: "WeeklySunday8PM", resourceGroupName: resourceGroup.Name, automationAccountName: automationAccount.Name,
                 description: scheduleDescription, frequency: "Week", startTime: startTime, timezone: "America/Toronto", interval: 1, weekDays: new List<string> { "Sunday" });
-            var updatePowershellModulesJob = factory.GetAutomationJobSchedule(resourceGroupName: resourceGroup.Name, automationAccountName: automationAccount.Name, 
-                runbookName: updatePowershellModulesRunbook.Name, scheduleName: updatePowershellModulesSchedule.Name, 
+            var updatePowershellModulesJob = factory.GetAutomationJobSchedule(resourceGroupName: resourceGroup.Name, automationAccountName: automationAccount.Name,
+                runbookName: updatePowershellModulesRunbook.Name, scheduleName: updatePowershellModulesSchedule.Name,
                 parameters: parameters);
 
             // Runbook for ShutdownSchedule
@@ -69,8 +100,8 @@ class Program
             };
             var shutdownScheduleScheduleStartup = factory.GetAutomationSchedule(name: "Daily7AM", resourceGroupName: resourceGroup.Name, automationAccountName: automationAccount.Name,
                 description: scheduleDescription, frequency: "Day", startTime: startTime, timezone: "America/Toronto", interval: 1);
-            var shutdownScheduleJobStartup = factory.GetAutomationJobSchedule(resourceGroupName: resourceGroup.Name, automationAccountName: automationAccount.Name, 
-                runbookName: shutdownScheduleRunbook.Name, scheduleName: shutdownScheduleScheduleStartup.Name, 
+            var shutdownScheduleJobStartup = factory.GetAutomationJobSchedule(resourceGroupName: resourceGroup.Name, automationAccountName: automationAccount.Name,
+                runbookName: shutdownScheduleRunbook.Name, scheduleName: shutdownScheduleScheduleStartup.Name,
                 parameters: parameters);
 
             // Schedule for Shutdown
@@ -82,10 +113,10 @@ class Program
             };
             var shutdownScheduleScheduleShutdown = factory.GetAutomationSchedule(name: "Daily7PM", resourceGroupName: resourceGroup.Name, automationAccountName: automationAccount.Name,
                description: scheduleDescription, frequency: "Day", startTime: startTime, timezone: "America/Toronto", interval: 1);
-            var shutdownScheduleJobShutdown = factory.GetAutomationJobSchedule(resourceGroupName: resourceGroup.Name, automationAccountName: automationAccount.Name, 
+            var shutdownScheduleJobShutdown = factory.GetAutomationJobSchedule(resourceGroupName: resourceGroup.Name, automationAccountName: automationAccount.Name,
                 runbookName: shutdownScheduleRunbook.Name, scheduleName: shutdownScheduleScheduleShutdown.Name,
                 parameters: parameters);
-
+            #endregion
             // Return any outputs that may be required for subsequent steps
             return new Dictionary<string, object?>
             {
