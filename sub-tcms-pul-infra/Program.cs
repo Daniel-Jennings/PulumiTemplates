@@ -19,7 +19,7 @@ class Program
             var companyCode = config.Require("company_code");
             var environment = config.Require("environment");
             var scope = config.Require("default_scope");
-            var tenantId = Output.Create<string>(config.Require("azure:tenantId"));
+            var tenantId = Output.Create<string>(config.Require("tenantId"));
             var rbacGroups = config.RequireObject<JsonElement>("rbac_groups");
             List<string> rbacGroupsList = new List<string>();
             foreach (JsonElement group in rbacGroups.EnumerateArray())
