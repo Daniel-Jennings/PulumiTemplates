@@ -39,28 +39,6 @@ class Program
             var workspace = factory.GetAnalyticsWorkspace(resourceGroupName: resourceGroup.Name, tags: tags);
             var automationAccount = factory.GetAutomationAccount(resourceGroupName: resourceGroup.Name, tags: tags);
 
-            //// Create the application and service principal
-            //var appRole = factory.GetADAppRole(value: "Contributor", description: "Contributor role for service principal application",
-            //    displayName: "AD-SP-Contributor", allowedMemberTypes: new List<string> { "Application" });
-            //List<ApplicationAppRolesArgs> appRoles = new List<ApplicationAppRolesArgs> { appRole };
-            //var application = factory.GetADApplication(appRoles: appRoles);
-            //var oauth2Permission = factory.GetADServicePrincipalOauth2Permissions();
-            //List<ServicePrincipalOauth2PermissionsArgs> oauth2Permissions = new List<ServicePrincipalOauth2PermissionsArgs> { oauth2Permission };
-            //var servicePrincipal = factory.GetADServicePrincipal(applicationId: application.ApplicationId, oauth2Permissions: oauth2Permissions);
-
-            // Create the key vault
-            //var accessPolicy = factory.GetKeyVaultAccessPolicy(tenantId: tenantId, objectId: servicePrincipal.ObjectId, secretPermissions: new List<string> { "get", "delete" },
-            //    certificatePermissions: new List<string> { "create", "get", "list", "import", "delete" });
-            //List<KeyVaultAccessPoliciesArgs> accessPolicies = new List<KeyVaultAccessPoliciesArgs> { accessPolicy };
-            //var keyVault = factory.GetKeyVault(resourceGroupName: resourceGroup.Name, tenantId: tenantId, accessPolicies: accessPolicies);
-
-            // Create the required RBAC groups read from the config
-            //for (int i = 0; i < rbacGroupsList.Count; i++)
-            //{
-            //    var rbacGroup = factory.GetADGroup((environment + "-" + rbacGroupsList[i]).ToLower(), "AD group for environment " + environment + " and role " + rbacGroupsList[i],
-            //        owners: new InputList<string> { servicePrincipal.ObjectId }, members: new InputList<string> { servicePrincipal.ObjectId });
-            //}
-
             #region Runbooks
             // Runbook for UpdatePowershellModules
             DateTime now = DateTime.Now;
